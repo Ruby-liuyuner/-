@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>玄学工具（小六壬 + 命宫计算）</title>
+  <style>
+    html,body{margin:0;padding:0;background:#0f1115;color:#e8e8e8;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans","PingFang SC","Hiragino Sans GB","Microsoft YaHei UI","Microsoft YaHei","WenQuanYi Micro Hei",sans-serif}
+    .wrap{display:flex;flex-direction:column;gap:16px;align-items:center;justify-content:flex-start;min-height:100vh;padding:24px}
+    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+    .tab{font-size:14px;border:1px solid #2a2f3a;border-radius:999px;padding:6px 12px;background:#12141a;color:#e8e8e8;cursor:pointer}
+    .tab.active{background:#1a1d25;border-color:#3a4050}
+    .pill{font-size:14px;opacity:.85;border:1px solid #2a2f3a;border-radius:999px;padding:6px 12px}
+    .big{font-size:72px;font-weight:800;line-height:1.05;letter-spacing:1px;text-align:center}
+    .grid{display:grid;grid-template-columns:1fr;gap:12px;max-width:720px;width:100%}
+    .card{border:1px solid #2a2f3a;border-radius:14px;padding:16px;background:#12141a}
+    .kv{display:flex;justify-content:space-between;gap:12px;font-variant-numeric:tabular-nums}
+    .kv b{font-weight:700}
+    .muted{opacity:.75}
+    .footer{opacity:.6;font-size:12px;text-align:center;max-width:700px}
+    .result{font-size:40px;font-weight:700;margin-top:-6px}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,"Liberation Mono","Courier New",monospace}
+    .small{font-size:13px}
+    .hint{opacity:.8}
+    section{display:none;width:100%}
+    section.active{display:block}
+    /* 命宫表单样式 */
+    .form{max-width:720px;width:100%;display:flex;flex-direction:column;gap:12px}
+    .form label{font-size:14px;opacity:.9}
+    .form input,.form select,.form button{padding:10px 12px;background:#0f1115;color:#e8e8e8;border:1px solid #2a2f3a;border-radius:10px;font-size:16px}
+    .form button{background:#2b6cb0;border-color:#2b6cb0;cursor:pointer}
+    .form button:hover{background:#2a69ac}
+    @media (max-width:420px){
+      .big{font-size:50px}
+      .result{font-size:32px}
+    }
+  </style>
+  <script>
+    function switchTab(name){
+      document.querySelectorAll('.tab').forEach(btn=>{
+        btn.classList.toggle('active', btn.dataset.tab===name);
+      });
+      document.querySelectorAll('section').forEach(sec=>{
+        sec.classList.toggle('active', sec.dataset.tab===name);
+      });
+    }
+    document.addEventListener('DOMContentLoaded', ()=>{
+      document.querySelectorAll('.tab').forEach(btn=>{
+        btn.addEventListener('click', ()=>switchTab(btn.dataset.tab));
+      });
+      switchTab('liuren');
+    });
+  </script>
+  <script>
+    // ---- 计算北京时间（不依赖本机时区） ----
+    function getBeijingParts(date = new Date()){
+      const opt = { timeZone: 'Asia/Shanghai', hour12: false,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit' };
+      const fmt = new Intl.DateTimeFormat('zh-CN', opt);
+      const parts = fmt.formatToParts(date).reduce((acc,p)=>{acc[p.type]=p.value; return acc;},{});
+      return { y: Number(parts.year), m: Number(parts.month), d: Number(parts.day), h: Number(parts.hour), i: Number(parts.minute), s: Number(parts.second) };
+    }
+    // ---- 农历换算（1900–2100） ----
+    const lunarInfo = [
+      0x04bd8,0x04ae0,0x0a570,0x054d5,0x0d260,0x0d950,0x16554,0x056a0,0x09ad0,0x055d2,
+      0x04ae0,0x0a5b6,0x0a4d0,0x0d250,0x1d255,0x0b540,0x0d6a0,0x0ada2,0x095b0,0x14977,
+      0x04970,0x0a4b0,0x0b4b5,0x06a50,0x06d40,0x1ab54,0x02b60,0x09570,0x052f2,0x04970,
+      0x06566,0x0d4a0,0x0ea50,0x06e95,0x05ad0,0x02b60,0x186e3,0x092e0,0x1c8d7,0x0c950,
+      0x0d4a0,0x1d8a6,0x0b550,0x056a0,0x1a5b4,0x025d0,0x092d0,0x0d2b2,0x0a950,0x0b557,
+      0x06ca0,0x0b550,0x15355,0x04da0,0x0a5d0,0x14573,0x052d0,0x0a9a8,0x0e950,0x06aa0,
+      0x0aea6,0x0ab50,0x04b60,0x0aae4,0x0a570,0x05260,0x0f263,0x0d950,0x05b57,0x056a0,
+      0x096d0,0x04dd5,0x04ad0,0x0a4d0,0x0d4d4,0x0d250,0x0d558,0x0b540,0x0b6a0,0x195a6,
+      0x095b0,0x049b0,0x0a974,0x0a4b0,0x0b27a,0x06a50,0x06d40,0x0af46,0x0ab60,0x09570,
+      0x04af5,0x04970,0x064b0,0x074a3,0x0ea50,0x06b58,0x05ac0,0x0ab60,0x096d5,0x092e0,
+      0x0c960,0x0d954,0x0d4a0,0x0da50,0x07552,0x056a0,0x0abb7,0x025d0,0x092d0,0x0cab5,
+      0x0a950,0x0b4a0,0x0baa4,0x0ad50,0x055d9,0x04ba0,0x0a5b0,0x15176,0x052b0,0x0a930,
+      0x07954,0x06aa0,0x0ad50,0x05b52,0x04b60,0x0a6e6,0x0a4e0,0x0d260,0x0ea65,0x0d530,
+      0x05aa0,0x076a3,0x096d0,0x04afb,0x04ad0,0x0a4d0,0x1d0b6,0x0d250,0x0d520,0x0dd45,
+      0x0b5a0,0x056d0,0x055b2,0x049b0,0x0a577,0x0a4b0,0x0aa50,0x1b255,0x06d20,0x0ada0,
+      0x14b63,0x09370,0x049f8,0x04970,0x064b0,0x168a6,0x0ea50,0x06b20,0x1a6c4,0x0aae0,
+      0x0a2e0,0x0d2e3,0x0c960,0x0d557,0x0d4a0,0x0da50,0x05d55,0x056a0,0x0a6d0,0x055d4,
+      0x052d0,0x0a9b8,0x0a950,0x0b4a0,0x0b6a6,0x0ad50,0x055a0,0x0aba4,0x0a5b0,0x052b0,
+      0x0b273,0x06930,0x07337,0x06aa0,0x0ad50,0x14b55,0x04b60,0x0a570,0x054e4,0x0d160,
+      0x0e968,0x0d520,0x0daa0,0x16aa6,0x056d0,0x04ae0,0x0a9d4,0x0a2d0,0x0d150,0x0f252,
+      0x0d520,0x0dd45,0x0b5a0,0x056d0,0x0a5b6,0x049b0,0x0a4b0,0x0b4b5,0x06a50,0x06d40,
+      0x1ab54,0x02b60,0x09570,0x052f2,0x04970,0x06566,0x0d4a0,0x0ea50,0x06e95,0x05ad0,
+      0x02b60,0x186e3,0x092e0,0x1c8d7,0x0c950,0x0d4a0,0x1d8a6,0x0b550,0x056a0,0x1a5b4,
+      0x025d0,0x092d0,0x0d2b2,0x0a950,0x0b557,0x06ca0,0x0b550,0x15355,0x04da0,0x0a5d0,
+      0x14573,0x052d0,0x0a9a8,0x0e950,0x06aa0,0x0aea6,0x0ab50,0x04b60,0x0aae4,0x0a570,
+      0x05260,0x0f263,0x0d950,0x05b57,0x056a0,0x096d0,0x04dd5,0x04ad0,0x0a4d0,0x0d4d4,
+      0x0d250,0x0d558,0x0b540,0x0b6a0,0x195a6,0x095b0,0x049b0,0x0a974,0x0a4b0,0x0b27a,
+      0x06a50,0x06d40,0x0af46,0x0ab60,0x09570,0x04af5,0x04970,0x064b0,0x074a3,0x0ea50,
+      0x06b58,0x05ac0,0x0ab60,0x096d5,0x092e0,0x0c960,0x0d954,0x0d4a0,0x0da50,0x07552,
+      0x056a0,0x0abb7,0x025d0,0x092d0,0x0cab5,0x0a950,0x0b4a0,0x0baa4,0x0ad50,0x055d9,
+      0x04ba0,0x0a5b0,0x15176,0x052b0,0x0a930,0x07954,0x06aa0,0x0ad50,0x05b52,0x04b60,
+      0x0a6e6,0x0a4e0,0x0d260,0x0ea65,0x0d530,0x05aa0,0x076a3,0x096d0,0x04afb,0x04ad0,
+      0x0a4d0,0x1d0b6,0x0d250,0x0d520,0x0dd45,0x0b5a0,0x056d0,0x055b2,0x049b0,0x0a577,
+      0x0a4b0,0x0aa50,0x1b255,0x06d20,0x0ada0,0x14b63,0x09370,0x049f8,0x04970,0x064b0,
+      0x168a6,0x0ea50,0x06b20,0x1a6c4,0x0aae0,0x0a2e0,0x0d2e3,0x0c960,0x0d557,0x0d4a0,
+      0x0da50,0x05d55,0x056a0,0x0a6d0,0x055d4,0x052d0,0x0a9b8,0x0a950,0x0b4a0,0x0b6a6,
+      0x0ad50,0x055a0,0x0aba4,0x0a5b0,0x052b0,0x0b273,0x06930,0x07337,0x06aa0,0x0ad50,
+      0x14b55,0x04b60,0x0a570,0x054e4,0x0d160,0x0e968,0x0d520,0x0daa0,0x16aa6,0x056d0,
+      0x04ae0,0x0a9d4,0x0a2d0,0x0d150,0x0f252,0x0d520
+    ];
+    function lYearDays(y){ let sum = 348; const info = lunarInfo[y-1900]; for (let i=0x8000; i>0x8; i >>= 1) sum += (info & i) ? 1 : 0; return sum + leapDays(y); }
+    function leapMonth(y){ return lunarInfo[y-1900] & 0xf; }
+    function leapDays(y){ return leapMonth(y) ? ((lunarInfo[y-1900] & 0x10000) ? 30 : 29) : 0; }
+    function monthDays(y,m){ return (lunarInfo[y-1900] & (0x10000 >> m)) ? 30 : 29; }
+    function solarToLunar(y,m,d){
+      const baseDate = new Date(1900,0,31);
+      const objDate = new Date(y, m-1, d);
+      let offset = Math.floor((objDate - baseDate)/86400000);
+      let i=1900, temp=0;
+      for(; i<2101 && offset>0; i++){ temp = lYearDays(i); offset -= temp; }
+      if (offset < 0){ offset += temp; i--; }
+      const lunarYear = i;
+      let leap = leapMonth(lunarYear);
+      let isLeap = false;
+      let lunarMonth, lunarDay;
+      for (i=1; i<13 && offset>0; i++){
+        if (leap>0 && i==(leap+1) && !isLeap){ --i; isLeap = true; temp = leapDays(lunarYear); }
+        else { temp = monthDays(lunarYear, i); }
+        if (isLeap && i==(leap+1)) isLeap = false;
+        offset -= temp;
+      }
+      if (offset === 0 && leap>0 && i==leap+1){ if (isLeap){ isLeap = false; } else { isLeap = true; --i; } }
+      if (offset < 0){ offset += temp; --i; }
+      lunarMonth = i; lunarDay = offset + 1; return { year:lunarYear, month:lunarMonth, day:lunarDay, isLeap:isLeap };
+    }
+    const SHICHEN = [
+      {name:'子', num:1, ranges:[[23,24],[0,1]]}, {name:'丑', num:2, ranges:[[1,3]]},
+      {name:'寅', num:3, ranges:[[3,5]]}, {name:'卯', num:4, ranges:[[5,7]]},
+      {name:'辰', num:5, ranges:[[7,9]]}, {name:'巳', num:6, ranges:[[9,11]]},
+      {name:'午', num:7, ranges:[[11,13]]}, {name:'未', num:8, ranges:[[13,15]]},
+      {name:'申', num:9, ranges:[[15,17]]}, {name:'酉', num:10, ranges:[[17,19]]},
+      {name:'戌', num:11, ranges:[[19,21]]}, {name:'亥', num:12, ranges:[[21,23]]},
+    ];
+    function hourToShichenCN(hour){ if (hour === 23 || hour === 0) return SHICHEN[0]; const idx = Math.max(1, Math.min(11, Math.floor((hour - 1)/2) + 1)); return SHICHEN[idx]; }
+    const OUTCOME = ['空亡','大安','留连','速喜','赤口','小吉'];
+    function fmt2(n){ return (n<10?'0':'') + n; }
+    function update(){
+      const p = getBeijingParts();
+      const cnTimeStr = `${p.y}-${fmt2(p.m)}-${fmt2(p.d)} ${fmt2(p.h)}:${fmt2(p.i)}:${fmt2(p.s)} (UTC+8)`;
+      const lunar = solarToLunar(p.y, p.m, p.d);
+      const A = lunar.month; const B = lunar.day; const sh = hourToShichenCN(p.h); const C = sh.num; const D = A + B + C; const mod6 = D % 6; const outcome = OUTCOME[mod6];
+      document.getElementById('headline').textContent = `${D}`;
+      document.getElementById('outcome').textContent = `结果：${outcome}`;
+      document.getElementById('cnTime').textContent = cnTimeStr;
+      document.getElementById('lunar').textContent = `农历${lunar.isLeap?'闰':''}${A}月${B}日`;
+      document.getElementById('shichen').textContent = `${sh.name}时（C=${C}）`;
+      document.getElementById('A').textContent = A;
+      document.getElementById('B').textContent = B;
+      document.getElementById('C').textContent = C;
+      document.getElementById('D').textContent = D;
+      document.getElementById('mod6').textContent = mod6;
+    }
+    document.addEventListener('DOMContentLoaded', ()=>{
+      update();
+      setInterval(update, 60000);
+    });
+  </script>
+  <script>
+    function calculate(){
+      const year = document.getElementById("year").value;
+      const gender = document.getElementById("gender").value;
+      if (!year || year.length !== 4){ alert("请输入有效的四位年份！"); return; }
+      const digits = year.split("").map(Number);
+      const A = digits.reduce((sum, val) => sum + val, 0);
+      const B = A % 9;
+      let C;
+      if (gender === "女"){
+        if (B == 5){ C = 8; }
+        else { C = (B + 2) <= 9 ? (B + 2) : ((B + 2) % 9 || 9); }
+      } else {
+        if (B == 5){ C = 2; }
+        else { C = (11 - B) <= 9 ? (11 - B) : ((11 - B) % 9 || 9); }
+      }
+      const elements = {1:"水",2:"土",3:"木",4:"木",5:"土",6:"金",7:"金",8:"土",9:"火"};
+      const element = elements[C];
+      document.getElementById("result").innerHTML = `计算结果：<br>年份：${year}<br>A（各位数和）：${A}<br>B（A ÷ 9 余数）：${B}<br>命宫 C：${C}<br>五行：${element}`;
+    }
+  </script>
+  <style>
+    .title{font-weight:800;font-size:22px;letter-spacing:.5px}
+  </style>
+  <link rel="icon" href="data:;base64,=">
+  <meta name="color-scheme" content="dark light">
+</head>
+<body>
+  <div class="wrap">
+    <div class="tabs">
+      <button class="tab active" data-tab="liuren">小六壬实时</button>
+      <button class="tab" data-tab="minggong">命宫计算</button>
+    </div>
+
+    <section id="liurenSection" data-tab="liuren" class="active">
+      <div class="pill">以 <b>北京时间（UTC+8）</b> 计算 · 自动每分钟刷新</div>
+      <div id="headline" class="big">--</div>
+      <div id="outcome" class="result">--</div>
+      <div class="grid">
+        <div class="card">
+          <div class="kv"><span>北京时间</span><b id="cnTime" class="mono">--</b></div>
+          <div class="kv"><span>农历</span><b id="lunar" class="mono">--</b></div>
+          <div class="kv"><span>时辰</span><b id="shichen" class="mono">--</b></div>
+          <div class="kv"><span>A（农历月）</span><b id="A" class="mono">--</b></div>
+          <div class="kv"><span>B（农历日）</span><b id="B" class="mono">--</b></div>
+          <div class="kv"><span>C（子=1…亥=12）</span><b id="C" class="mono">--</b></div>
+          <div class="kv"><span>D = A + B + C</span><b id="D" class="mono">--</b></div>
+          <div class="kv"><span>D % 6</span><b id="mod6" class="mono">--</b></div>
+        </div>
+        <div class="card small">
+          <div class="hint">小六壬映射：0=空亡，1=大安，2=留连，3=速喜，4=赤口，5=小吉。</div>
+          <div class="muted" style="margin-top:8px">将本页加入书签或固定到浏览器标签栏，即可当“网页页签”使用；在手机上可“添加到主屏幕”。</div>
+        </div>
+      </div>
+      <div class="footer">说明：农历换算支持 1900–2100 年；时辰划分：子(23–1)、丑(1–3)、寅(3–5)、卯(5–7)、辰(7–9)、巳(9–11)、午(11–13)、未(13–15)、申(15–17)、酉(17–19)、戌(19–21)、亥(21–23)。</div>
+    </section>
+
+    <section id="minggongSection" data-tab="minggong">
+      <div class="grid">
+        <div class="card">
+          <div class="title" style="margin-bottom:8px">命宫计算器</div>
+          <div class="form">
+            <label for="year">请输入出生年份（四位数，如 1998）：</label>
+            <input type="number" id="year" placeholder="1998">
+            <label for="gender">请选择性别：</label>
+            <select id="gender">
+              <option value="女">女</option>
+              <option value="男">男</option>
+            </select>
+            <button onclick="calculate()">计算命宫</button>
+            <div id="result" class="mono"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>
+
+
